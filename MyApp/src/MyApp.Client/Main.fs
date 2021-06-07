@@ -75,6 +75,7 @@ type BookService =
 
 /// The Elmish application's update messages.
 type Message =
+    | TestResult of float[]
     | TestMessage
     | SetPage of Page
     | Increment
@@ -93,11 +94,15 @@ type Message =
     | Error of exn
     | ClearError
 
-let update (rt : IJSRuntime) remote message model =
+let update (dispatch : Message -> unit) (rt : IJSRuntime) remote message model =
     let onSignIn = function
         | Some _ -> Cmd.ofMsg GetBooks
         | None -> Cmd.none
     match message with
+    | TestResult r -> 
+        for i in r do 
+            Console.WriteLine("{0}",i)
+        model, Cmd.none
     | TestMessage -> 
 
 
@@ -217,9 +222,12 @@ let view (rt : IJSRuntime) model dispatch =
             | Test -> 
                 Main.TEST()
                     .Test(fun _ -> 
-                        let r = rt.InvokeAsync("testFun",[||]).Result
-                        Console.WriteLine("result: {0}",r)
-                        Console.WriteLine("hhhaaalllooo");)
+                        async {
+                            let! res = rt.InvokeAsync<float[]>("testFun",[||]).AsTask() |> Async.AwaitTask
+                            dispatch (TestResult res)
+                        } |> Async.Start
+                    )
+                        
                     .Elt()
         )
         .Error(
@@ -238,8 +246,9 @@ type MyApp() =
 
     override this.Program =
         let bookService = this.Remote<BookService>()
+        let d = this.Dispatch
         let rt = this.JSRuntime
-        let update = update rt bookService
+        let update = update d rt bookService
         
         Program.mkProgram (fun _ -> initModel, Cmd.ofMsg GetSignedInAs) update (view rt)
         |> Program.withRouter router
